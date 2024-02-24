@@ -54,7 +54,6 @@ class MenuState:
                 if button.is_clicked(mouse_pos):
                     self.next_state = GameState(button.difficulty)  # Get singleton instance
                     self.next_state.reset_window()
-        pass
 
     def reset_window(self):
         return pygame.display.set_mode((600, 600))
