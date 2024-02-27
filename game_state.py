@@ -1,4 +1,6 @@
 
+import math
+import random
 import pygame
 
 from enum import Enum, auto
@@ -18,6 +20,7 @@ GRAY = (224, 224, 224)
 
 background_color = GRAY
 grid_color = LIGHT_GRAY
+mine_color = BLACK
 
 class Difficulty(Enum):
     EASY = auto()
@@ -39,6 +42,9 @@ class GameState:
             self.settings = self.get_settings_by_difficulty(difficulty)
             self.initialized = True
 
+        self.mine_positions = set()
+        self.place_mines_randomly()
+
     def get_settings_by_difficulty(self, difficulty):
         settings = {
             Difficulty.EASY: {'cols': 9, 'rows': 9, 'mines': 10},
@@ -46,6 +52,16 @@ class GameState:
             Difficulty.HARD: {'cols': 30, 'rows': 16, 'mines': 99}
         }
         return settings.get(difficulty)
+
+    def place_mines_randomly(self):
+        mines_to_place = self.settings['mines']
+
+        possible_positions = [
+            (x, y) for x in range(self.settings['cols'])
+            for y in range(self.settings['rows'])
+        ]
+
+        self.mine_positions = set(random.sample(possible_positions, mines_to_place))
 
     def handle_event(self, event):
         # Handle game inputs (mouse clicks for revealing cells, flagging mines, etc.)
@@ -63,6 +79,24 @@ class GameState:
         width = left_span + cols * cell_size + right_span
         height = rows * cell_size + top_span + bottom_span
         pygame.display.set_mode((width, height))
+
+
+    def draw_mine(self, screen, position):
+        # Central point of the mine
+        mine_center = (left_span + position[0] * cell_size + cell_size // 2,
+                       top_span + position[1] * cell_size + cell_size // 2)
+        mine_radius = cell_size // 4  # Radius of the mine circle
+
+        # Draw the central mine circle
+        pygame.draw.circle(screen, mine_color, mine_center, mine_radius)
+
+        # Draw the spikes
+        num_spikes = 8
+        for i in range(num_spikes):
+            angle = (360 / num_spikes) * i
+            end_x = mine_center[0] + int(mine_radius * 1.5 * math.cos(math.radians(angle)))
+            end_y = mine_center[1] + int(mine_radius * 1.5 * math.sin(math.radians(angle)))
+            pygame.draw.line(screen, mine_color, mine_center, (end_x, end_y), 2)
 
     def draw(self, screen):
         # Clear the screen with a background color
@@ -84,6 +118,10 @@ class GameState:
         for row in range(rows + 1):
             y = top_span + row * cell_size
             pygame.draw.line(screen, grid_color, (left_span, y), (right_x, y))
+
+        # Draw mines
+        for pos in self.mine_positions:
+            self.draw_mine(screen, pos)
 
         # Update the display
         pygame.display.flip()
