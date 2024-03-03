@@ -25,10 +25,11 @@ def main():
         # Update the current state and check for state change
         next_state = current_state.update()
         if next_state is not None:
-            if isinstance(next_state, MenuState):
+            if next_state == 'menu':
                 current_state = MenuState()
             elif isinstance(next_state, GameState):
                 current_state = next_state
+            current_state.reset_window()
 
         # Draw the current state
         current_state.draw(screen)
