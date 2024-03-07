@@ -13,10 +13,11 @@ right_span = 10
 # Define colors
 WHITE = (255, 255, 255)
 BLACK = (0, 0, 0)
-GRAY = (200, 200, 200)
+LIGHT_GRAY = (96, 96, 96)
+GRAY = (224, 224, 224)
 
-background_color = WHITE
-grid_color = GRAY
+background_color = GRAY
+grid_color = LIGHT_GRAY
 
 class Difficulty(Enum):
     EASY = auto()
