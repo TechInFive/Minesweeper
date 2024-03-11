@@ -36,6 +36,4 @@ python main.py
 - [Building the Minesweeper Menu with Python & PyGame in 5 Minutes!](https://youtu.be/tBtD132V_O8).
 - [Rendering the Minesweeper Game State with Python & PyGame in 5 Minutes!](https://youtu.be/NIZXqIxmlzc).
 - [Strategically Placing Mines in Minesweeper, with Python & PyGame in 5 Minutes!](https://youtu.be/CQXBMX1lWyo).
- 
-
-
+- [Minesweeper Hints and 3D Cells Rendered with Python & PyGame in 5 Minutes!](https://youtu.be/tAvlZ1LaNlQ)
