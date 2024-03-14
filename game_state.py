@@ -17,6 +17,7 @@ WHITE = (255, 255, 255)
 BLACK = (0, 0, 0)
 LIGHT_GRAY = (96, 96, 96)
 GRAY = (224, 224, 224)
+RED = (255, 0, 0) 
 
 background_color = GRAY
 grid_color = LIGHT_GRAY
@@ -25,6 +26,8 @@ mine_color = BLACK
 dark_edge_color = (128, 128, 128)
 light_edge_color = WHITE
 top_layer_color = (192, 192, 192)
+
+font_size = 28
 
 # Cell values
 EMPTY = 'E'
@@ -98,8 +101,38 @@ class GameState:
                             self.grid[adj_y][adj_x] += 1
 
     def handle_event(self, event):
-        # Handle game inputs (mouse clicks for revealing cells, flagging mines, etc.)
-        pass
+        if event.type != pygame.MOUSEBUTTONDOWN:
+            return
+        # Calculate grid position from mouse position
+        x, y = event.pos
+        grid_x = (x - left_span) // cell_size
+        grid_y = (y - top_span) // cell_size
+        
+        # Ensure the click is within the grid bounds
+        if 0 <= grid_x < self.settings['cols'] and 0 <= grid_y < self.settings['rows']:
+            if event.button == 1:  # Left click
+                self.left_click_action(grid_x, grid_y)
+            elif event.button == 3:  # Right click
+                self.right_click_action(grid_x, grid_y)
+
+    def left_click_action(self, x, y):
+        # Check if the cell is already revealed or flagged
+        if self.cell_state_grid[y][x] in [CellState.REVEALED, CellState.FLAGGED]:
+            return
+
+        # Use BFS to reveal surrounding cells if the clicked cell is empty
+        queue = [(x, y)]
+        while queue:
+            current_x, current_y = queue.pop(0)
+            self.cell_state_grid[current_y][current_x] = CellState.REVEALED
+
+            if self.grid[current_y][current_x] != EMPTY:
+                continue
+            # Only check surrounding cells of an empty cell
+            for adj_y in range(max(0, current_y-1), min(current_y+2, self.settings['rows'])):
+                for adj_x in range(max(0, current_x-1), min(current_x+2, self.settings['cols'])):
+                    if self.cell_state_grid[adj_y][adj_x] == CellState.HIDDEN:
+                        queue.append((adj_x, adj_y))
 
     def right_click_action(self, x, y):
         current_state = self.cell_state_grid[y][x]
@@ -123,10 +156,13 @@ class GameState:
         height = rows * cell_size + top_span + bottom_span
         pygame.display.set_mode((width, height))
 
+    def absolute_position(self, position):
+        return (left_span + position[0] * cell_size, top_span + position[1] * cell_size)
+
     def draw_mine(self, screen, position):
+        (x, y) = self.absolute_position(position)
         # Central point of the mine
-        mine_center = (left_span + position[0] * cell_size + cell_size // 2,
-                       top_span + position[1] * cell_size + cell_size // 2)
+        mine_center = (x + cell_size // 2, y + cell_size // 2)
         mine_radius = cell_size // 4  # Radius of the mine circle
 
         # Draw the central mine circle
@@ -141,16 +177,32 @@ class GameState:
             pygame.draw.line(screen, mine_color, mine_center, (end_x, end_y), 2)
 
     def draw_hint(self, screen, position, number):
-        font = pygame.font.SysFont(None, 28)
-        text = font.render(str(number), True, (0, 0, 0))
-        text_rect = text.get_rect(center=((position[0] * cell_size + cell_size // 2 + left_span),
-                                        (position[1] * cell_size + cell_size // 2 + top_span)))
+        (x, y) = self.absolute_position(position)
+        font = pygame.font.SysFont(None, font_size)
+        text = font.render(str(number), True, BLACK)
+        text_rect = text.get_rect(center=((x + cell_size // 2), (y + cell_size // 2)))
+        screen.blit(text, text_rect)
+
+    def draw_flag(self, screen, position):
+        (x, y) = self.absolute_position(position)
+        # Pole
+        pygame.draw.line(screen, BLACK, (x + cell_size // 2, y + cell_size // 4),
+                         (x + cell_size // 2, y + 3 * cell_size // 4), 2)
+        # Flag
+        pygame.draw.polygon(screen, RED, [(x + cell_size // 2 + 1, y + cell_size // 4),
+                                          (x + cell_size - 5, y + cell_size // 2),
+                                          (x + cell_size // 2 + 1, y + cell_size // 2)])
+
+    def draw_question_mark(self, screen, position):
+        (x, y) = self.absolute_position(position)
+        font = pygame.font.SysFont(None, font_size)
+        text = font.render('?', True, BLACK)
+        text_rect = text.get_rect(center=((x + cell_size // 2 + 1), (y + cell_size // 2)))
         screen.blit(text, text_rect)
 
     def draw_cover(self, screen, position):
-
-        cell_rect = pygame.Rect(position[0] * cell_size + left_span + 1,
-            position[1] * cell_size + top_span + 1, cell_size - 2, cell_size - 2)
+        (x, y) = self.absolute_position(position)
+        cell_rect = pygame.Rect(x + 1, y + 1, cell_size - 2, cell_size - 2)
 
         # Draw unrevealed cell with a 3D effect
         pygame.draw.rect(screen, top_layer_color, cell_rect)
@@ -192,9 +244,11 @@ class GameState:
                     else:
                         self.draw_hint(screen, (x, y), self.grid[y][x])
                 elif cell_state == CellState.QUESTIONED:
-                    pass
+                    self.draw_cover(screen, (x, y))
+                    self.draw_question_mark(screen, (x, y))
                 elif cell_state == CellState.FLAGGED:
-                    pass
+                    self.draw_cover(screen, (x, y))
+                    self.draw_flag(screen, (x, y))
                 elif cell_state == CellState.HIDDEN:
                     self.draw_cover(screen, (x, y))
 
