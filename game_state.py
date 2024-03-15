@@ -1,6 +1,7 @@
 
 import math
 import random
+import time
 import pygame
 
 from enum import Enum, auto
@@ -18,6 +19,7 @@ BLACK = (0, 0, 0)
 LIGHT_GRAY = (96, 96, 96)
 GRAY = (224, 224, 224)
 RED = (255, 0, 0) 
+DARK_GREEN = (0, 192, 0) 
 
 background_color = GRAY
 grid_color = LIGHT_GRAY
@@ -44,6 +46,13 @@ class CellState(Enum):
     FLAGGED = auto()
     QUESTIONED = auto()
 
+class GameStatus(Enum):
+    NOT_STARTED = 0
+    IN_PROGRESS = 1
+    GAME_OVER = 2
+    GAME_WIN = 3
+    GAME_EXIT = 4
+
 class GameState:
     instances = {}  # Class variable to store instances
 
@@ -56,21 +65,28 @@ class GameState:
     def __init__(self, difficulty):
         if not hasattr(self, 'initialized'):  # Avoid reinitialization
             self.difficulty = difficulty
-            self.settings = self.get_settings_by_difficulty(difficulty)
+            settings = self.get_settings_by_difficulty(difficulty)
+            self.cols = settings['cols']
+            self.rows = settings['rows']
+            self.total_mines = settings['mines']
             self.initialized = True
 
         self.grid = [
-            [EMPTY for _ in range(self.settings['cols'])]
-            for _ in range(self.settings['rows'])
+            [EMPTY for _ in range(self.cols)]
+            for _ in range(self.rows)
         ]
 
         self.cell_state_grid = [
-            [CellState.HIDDEN for _ in range(self.settings['cols'])]
-            for _ in range(self.settings['rows'])
+            [CellState.HIDDEN for _ in range(self.cols)]
+            for _ in range(self.rows)
         ]
 
-        # self.mine_positions = set()
         self.place_mines_randomly()
+
+        self.flags_placed = 0
+        self.game_status = GameStatus.NOT_STARTED
+        self.start_time = None
+        self.elapsed_time = 0
 
     def get_settings_by_difficulty(self, difficulty):
         settings = {
@@ -81,19 +97,17 @@ class GameState:
         return settings.get(difficulty)
 
     def place_mines_randomly(self):
-        mines_to_place = self.settings['mines']
-
         possible_positions = [
-            (x, y) for x in range(self.settings['cols'])
-            for y in range(self.settings['rows'])
+            (x, y) for x in range(self.cols)
+            for y in range(self.rows)
         ]
 
-        mine_positions = set(random.sample(possible_positions, mines_to_place))
+        mine_positions = set(random.sample(possible_positions, self.total_mines))
         for (x, y) in mine_positions:
             self.grid[y][x] = MINE
             # Increment hint numbers for adjacent cells
-            for adj_y in range(max(0, y-1), min(self.settings['rows'], y+2)):
-                for adj_x in range(max(0, x-1), min(self.settings['cols'], x+2)):
+            for adj_y in range(max(0, y-1), min(self.rows, y+2)):
+                for adj_x in range(max(0, x-1), min(self.cols, x+2)):
                     if self.grid[adj_y][adj_x] != MINE:
                         if self.grid[adj_y][adj_x] == EMPTY:
                             self.grid[adj_y][adj_x] = 1
@@ -103,22 +117,41 @@ class GameState:
     def handle_event(self, event):
         if event.type != pygame.MOUSEBUTTONDOWN:
             return
-        # Calculate grid position from mouse position
-        x, y = event.pos
-        grid_x = (x - left_span) // cell_size
-        grid_y = (y - top_span) // cell_size
         
-        # Ensure the click is within the grid bounds
-        if 0 <= grid_x < self.settings['cols'] and 0 <= grid_y < self.settings['rows']:
-            if event.button == 1:  # Left click
-                self.left_click_action(grid_x, grid_y)
-            elif event.button == 3:  # Right click
-                self.right_click_action(grid_x, grid_y)
+        if self.game_status in (GameStatus.GAME_OVER, GameStatus.GAME_WIN):
+            if self.again_button_rect.collidepoint(event.pos):
+                self.__init__(self.difficulty)
+            elif self.menu_button_rect.collidepoint(event.pos):
+                self.game_status = GameStatus.GAME_EXIT
+        else:
+            # Calculate grid position from mouse position
+            x, y = event.pos
+            grid_x = (x - left_span) // cell_size
+            grid_y = (y - top_span) // cell_size
+            
+            # Ensure the click is within the grid bounds
+            if 0 <= grid_x < self.cols and 0 <= grid_y < self.rows:
+                if event.button == 1:  # Left click
+                    self.left_click_action(grid_x, grid_y)
+                elif event.button == 3:  # Right click
+                    self.right_click_action(grid_x, grid_y)
 
     def left_click_action(self, x, y):
         # Check if the cell is already revealed or flagged
         if self.cell_state_grid[y][x] in [CellState.REVEALED, CellState.FLAGGED]:
             return
+
+        # Start timer for the first left click
+        if self.game_status == GameStatus.NOT_STARTED:
+            self.game_status = GameStatus.IN_PROGRESS
+            self.start_time = time.time()
+
+        if self.game_status != GameStatus.IN_PROGRESS:
+            return
+
+        # Check for game over
+        if self.grid[y][x] == MINE:
+            self.game_status = GameStatus.GAME_OVER
 
         # Use BFS to reveal surrounding cells if the clicked cell is empty
         queue = [(x, y)]
@@ -129,28 +162,39 @@ class GameState:
             if self.grid[current_y][current_x] != EMPTY:
                 continue
             # Only check surrounding cells of an empty cell
-            for adj_y in range(max(0, current_y-1), min(current_y+2, self.settings['rows'])):
-                for adj_x in range(max(0, current_x-1), min(current_x+2, self.settings['cols'])):
+            for adj_y in range(max(0, current_y-1), min(current_y+2, self.rows)):
+                for adj_x in range(max(0, current_x-1), min(current_x+2, self.cols)):
                     if self.cell_state_grid[adj_y][adj_x] == CellState.HIDDEN:
                         queue.append((adj_x, adj_y))
 
+        # Check for game win
+        if all(self.cell_state_grid[y][x] != CellState.HIDDEN
+               for x in range(self.cols)
+               for y in range(self.rows)
+               if self.grid[y][x] != MINE):
+            self.game_status = GameStatus.GAME_WIN
+    
     def right_click_action(self, x, y):
         current_state = self.cell_state_grid[y][x]
         if current_state == CellState.HIDDEN:
             self.cell_state_grid[y][x] = CellState.FLAGGED
+            self.flags_placed += 1
         elif current_state == CellState.FLAGGED:
             self.cell_state_grid[y][x] = CellState.QUESTIONED
+            self.flags_placed -= 1
         elif current_state == CellState.QUESTIONED:
             self.cell_state_grid[y][x] = CellState.HIDDEN
 
     def update(self):
-        # Update game logic (check for win/lose, reveal cells, etc.)
-        # Return to MenuState or end the game based on game conditions
-        pass
+        if self.game_status == GameStatus.IN_PROGRESS:
+            self.elapsed_time = int(time.time() - self.start_time)
+
+        if self.game_status == GameStatus.GAME_EXIT:
+            return "menu"
 
     def reset_window(self):
-        cols = self.settings['cols']
-        rows = self.settings['rows']
+        cols = self.cols
+        rows = self.rows
 
         width = left_span + cols * cell_size + right_span
         height = rows * cell_size + top_span + bottom_span
@@ -211,13 +255,47 @@ class GameState:
         pygame.draw.line(screen, dark_edge_color, cell_rect.bottomleft, cell_rect.bottomright)
         pygame.draw.line(screen, dark_edge_color, cell_rect.bottomright, cell_rect.topright)
 
+    def draw_counter(self, screen):
+        remaining_mines = self.total_mines - self.flags_placed
+        counter_font = pygame.font.SysFont('digital', 30)  # Use a digital-looking font
+        counter_surface = counter_font.render(f"{remaining_mines}", True, RED)
+        screen.blit(counter_surface, (left_span, 10))  # Adjust position as needed
+
+    def draw_timer(self, screen):
+        timer_font = pygame.font.SysFont('digital', 30)
+        timer_surface = timer_font.render(f"{self.elapsed_time}", True, RED)
+        screen.blit(timer_surface, (screen.get_width() - timer_surface.get_width() - left_span , 10 ))
+
+    def draw_buttons(self, screen):
+        if self.game_status not in [GameStatus.GAME_OVER, GameStatus.GAME_WIN]:
+            return
+
+        font = pygame.font.SysFont('Arial', 14)
+        font_color = RED if self.game_status == GameStatus.GAME_OVER else DARK_GREEN
+        play_again_render = font.render("Again", True, font_color)
+
+        center_x = screen.get_width() / 2
+        text_span = 2
+        button_width = play_again_render.get_width() + text_span * 2
+        button_height = play_again_render.get_height() + text_span * 2
+        left_x = center_x - button_width - text_span
+        self.again_button_rect = pygame.Rect(left_x, 10, button_width, button_height)
+        pygame.draw.rect(screen, top_layer_color, self.again_button_rect)
+        screen.blit(play_again_render, (left_x + text_span, 10 + text_span))
+
+        menu_render = font.render("Menu", False, BLACK)
+        button_width = menu_render.get_width() + text_span * 2
+        self.menu_button_rect = pygame.Rect(center_x + text_span, 10, button_width, button_height)
+        pygame.draw.rect(screen, top_layer_color, self.menu_button_rect)
+        screen.blit(menu_render, (center_x + text_span, 10 + text_span))
+
     def draw(self, screen):
         # Clear the screen with a background color
         screen.fill(background_color)
 
         # Retrieve the the number of columns and rows
-        cols = self.settings['cols']
-        rows = self.settings['rows']
+        cols = self.cols
+        rows = self.rows
 
         right_x = left_span + cell_size * cols
         bottom_y = top_span + cell_size * rows
@@ -233,8 +311,8 @@ class GameState:
             pygame.draw.line(screen, grid_color, (left_span, y), (right_x, y))
 
         # Draw mines and hints
-        for y in range(self.settings['rows']):
-            for x in range(self.settings['cols']):
+        for y in range(self.rows):
+            for x in range(self.cols):
                 cell_state = self.cell_state_grid[y][x]
                 if cell_state == CellState.REVEALED:
                     if self.grid[y][x] == MINE:
@@ -251,6 +329,10 @@ class GameState:
                     self.draw_flag(screen, (x, y))
                 elif cell_state == CellState.HIDDEN:
                     self.draw_cover(screen, (x, y))
+
+        self.draw_counter(screen)
+        self.draw_timer(screen)
+        self.draw_buttons(screen)
 
         # Update the display
         pygame.display.flip()
